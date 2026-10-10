@@ -1,0 +1,73 @@
+{
+  "name": "tacet-playmusic",
+  "displayName": "Tacet for YouTube Music",
+  "version": "1.3.0",
+  "description": "Vocal Separation for YouTube Music",
+  "author": "Boidu",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.26.2",
+  "scripts": {
+    "preinstall": "npx --yes only-allow pnpm",
+    "apply:patches": "node tooling/apply-patches.mjs",
+    "build:worker": "tsc -p workers/tsconfig.json && tsc-alias -p workers/tsconfig.json -f",
+    "dev": "pnpm apply:patches && pnpm build:worker && plasmo dev --verbose",
+    "build": "pnpm apply:patches && pnpm build:worker && plasmo build",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint . && biome format .",
+    "lint:fix": "biome lint --write . && biome format --write .",
+    "test": "vitest run",
+    "sync:ort": "shx cp node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs assets/ort/ && shx cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs assets/ort/ && shx cp node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm assets/ort/"
+  },
+  "dependencies": {
+    "@types/sortablejs": "^1.15.9",
+    "plasmo": "0.90.5",
+    "sortablejs": "^1.15.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.8.3",
+    "@types/chrome": "^0.2.5",
+    "@types/node": "^22.19.6",
+    "@types/trusted-types": "^2.0.7",
+    "fake-indexeddb": "^6.2.5",
+    "onnxruntime-web": "1.26.0",
+    "shx": "^0.4.0",
+    "tsc-alias": "^1.9.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "manifest": {
+    "host_permissions": [
+      "https://music.youtube.com/*",
+      "https://www.youtube.com/*",
+      "https://*.googlevideo.com/*",
+      "https://models.betterlyrics.org/*"
+    ],
+    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArXxvekuv4grdgbAaCvcFhRUZElp2sLdzc4c+qKQ8JSk6miRUrME+gx1pPHUxPjtC3zBUftn/CJXoU6LG3cE+R3VvfbhNTurSEq09NaPzFPqne3UBhOd2nDlOUf2WIIuTN1rt21W6FMwoJEwetJvP3RkfEQAicmaSZlW9VzGD071Nl2OpGktArtedOQKSx5F/S7+hRpBlR7fTErWHjcBVvUtUYGF/1qFgbTbAppuzq2+Kg0W39Sf291zB4GPnFTi6zhvJ1JQayNthurKmP4qr3GXA/Hcc8UMcOckbhwGcxGDj+HNUhahsWNcM+7liSTvba8YIVzrBa77n0iyd9BEDdwIDAQAB",
+    "permissions": [
+      "storage",
+      "offscreen"
+    ],
+    "content_security_policy": {
+      "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    },
+    "web_accessible_resources": [
+      {
+        "resources": [
+          "assets/ort/*",
+          "assets/workers/*",
+          "assets/src/acquisition/*",
+          "assets/src/separation/*",
+          "assets/src/cache/*",
+          "assets/src/orchestrator/*",
+          "assets/src/relay/*",
+          "assets/src/settings/*",
+          "assets/src/shared/*",
+          "assets/offscreen.html"
+        ],
+        "matches": [
+          "https://music.youtube.com/*"
+        ]
+      }
+    ]
+  }
+}

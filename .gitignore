@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+dist/
+
+# Development
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Plasmo
+.plasmo/
+
+# TypeScript
+*.tsbuildinfo
+
+.claude/
+
+.env.*
+!.env.example
+
+# Model weights, fetched at runtime and cached in IndexedDB
+*.onnx
+
+# Local model staging, and the wrangler state an upload from there leaves
+# behind: miniflare keeps a content-addressed copy of every object, so a
+# 170 MB blob lands here the moment a model is pushed to R2.
+models/
+
+# ORT wasm binaries, repopulate with assets/ort/README.md
+assets/ort/*.wasm
+
+# Built by build:worker, not Parcel
+assets/workers/
+assets/src/
+
+# Extension signing key. The public half is pinned in package.json as
+# manifest.key; this is the private half and must never be committed.
+.keys/
+*.pem
+
+# Manual stress harness. Drives a real browser against real YouTube Music, so
+# it cannot run in CI and is kept out of the tree deliberately.
+scripts/stress/
+
+# Python side-venv for tooling/convert-fp16.py.
+.venv-onnx/
+
+# pnpm is the only package manager here, enforced by the preinstall guard in
+# package.json. A rival lockfile appearing in the tree means someone got past
+# it, so it is ignored rather than committed alongside pnpm-lock.yaml.
+package-lock.json
+yarn.lock

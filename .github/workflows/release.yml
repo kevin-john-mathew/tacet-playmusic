@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version number. 3 digits for a release (e.g. 1.2.0), 4 digits for a canary (e.g. 1.2.0.1-canary)."
+        required: true
+      is_canary:
+        description: "Canary (pre-release) build?"
+        type: boolean
+        default: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Validate version format
+        run: |
+          IS_CANARY='${{ github.event.inputs.is_canary }}'
+          VERSION='${{ github.event.inputs.version }}'
+
+          if [[ "$IS_CANARY" == "true" ]]; then
+            if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              echo "::error::Canary releases must use a 4-digit version (e.g. 1.2.0.1 or 1.2.0.1-canary)."
+              exit 1
+            fi
+          else
+            if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Full releases must use a 3-digit version (e.g. 1.2.0)."
+              exit 1
+            fi
+          fi
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      # The .wasm binaries are gitignored, so a clean checkout has the loaders
+      # without the runtime they load. Building without this ships an extension
+      # that fails only once a track is separated.
+      - name: Restore ORT binaries
+        run: pnpm sync:ort
+
+      - name: Update version
+        run: node tooling/update-version.mjs ${{ github.event.inputs.version }}
+
+      - name: Build
+        run: pnpm build
+
+      - name: Stage version bump
+        id: stage
+        run: |
+          git add package.json
+          if ! git diff --staged --quiet; then
+            echo "changes_exist=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit version bump
+        if: steps.stage.outputs.changes_exist == 'true'
+        uses: planetscale/ghcommit-action@v0.2.19
+        with:
+          commit_message: "Release version ${{ github.event.inputs.version }}"
+          repo: ${{ github.repository }}
+          branch: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin ${{ github.ref_name }}
+          git reset --hard origin/${{ github.ref_name }}
+          git tag -a "v${{ github.event.inputs.version }}" -m "Version ${{ github.event.inputs.version }}"
+          git push origin "v${{ github.event.inputs.version }}"
+
+      # Zipped with a top-level folder, so unzipping produces one directory to
+      # point "Load unpacked" at rather than scattering 70 files into Downloads.
+      - name: Zip the unpacked extension
+        run: |
+          cp -r build/chrome-mv3-prod tacet
+          zip -rq tacet-v${{ github.event.inputs.version }}-chrome.zip tacet
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "tacet-v${{ github.event.inputs.version }}-chrome.zip"
+          tag: "v${{ github.event.inputs.version }}"
+          name: "v${{ github.event.inputs.version }}"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ github.event.inputs.is_canary == 'true' }}
+          generateReleaseNotes: true
+          draft: true

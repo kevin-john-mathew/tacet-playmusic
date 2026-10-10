@@ -1,0 +1,482 @@
+:root {
+  --blk-accent: #f20c32;
+  --blk-glyph-active: color-mix(in srgb, var(--blk-accent) 20%, #fff);
+}
+
+@property --glyph-o {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/* -- The control's own button --------------------------------------------- */
+.blyrics-sing {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: hsla(0, 0%, 100%, 0.6);
+  cursor: pointer;
+  transition-property: background-color, color, scale;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease, cubic-bezier(0.2, 0, 0, 1));
+}
+.blyrics-sing:hover {
+  background-color: hsla(0, 0%, 100%, 0.16);
+  color: hsla(0, 0%, 100%, 0.95);
+}
+.blyrics-sing:active {
+  scale: 0.96;
+}
+.blyrics-sing:focus-visible {
+  outline: 2px solid var(--blk-accent);
+  outline-offset: 2px;
+}
+.blyrics-sing--active {
+  color: var(--blk-glyph-active);
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--blk-accent) 45%, transparent),
+    color-mix(in srgb, var(--blk-accent) 22%, transparent)
+  );
+  box-shadow: inset rgba(255, 255, 255, 0.18) 0 1px 0 0;
+}
+
+.blyrics-sing.blyrics-dock__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+}
+.blyrics-sing.blyrics-dock__control:hover {
+  background-color: hsla(0, 0%, 100%, 0.16);
+  color: hsla(0, 0%, 100%, 0.95);
+}
+.blyrics-sing.blyrics-dock__control:focus-visible {
+  outline: 2px solid var(--blk-accent);
+  outline-offset: 2px;
+}
+
+.blyrics-sing.blyrics-dock__control.blyrics-dock__control--active {
+  color: var(--blk-glyph-active);
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--blk-accent) 45%, transparent),
+    color-mix(in srgb, var(--blk-accent) 22%, transparent)
+  );
+  box-shadow: inset rgba(255, 255, 255, 0.18) 0 1px 0 0;
+}
+
+/* -- Player bar fallback -------------------------------------------------- */
+.blyrics-sing.blyrics-sing--bar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: rgb(144, 144, 144);
+}
+.blyrics-sing--bar.blyrics-sing--active {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--blk-glyph-active);
+}
+.blyrics-sing--bar .blyrics-sing__glyph--busy > span {
+  width: 24px;
+  height: 24px;
+}
+
+.blyrics-sing__glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  --glyph-o: 0;
+  filter: blur(4px);
+  transform: scale(0.25);
+  transition-property: --glyph-o, filter, transform;
+  transition-duration: 130ms;
+  transition-delay: 0ms;
+  transition-timing-function: var(--ease, cubic-bezier(0.2, 0, 0, 1));
+  pointer-events: none;
+}
+.blyrics-sing__glyph--on {
+  --glyph-o: 1;
+  filter: blur(0);
+  transform: scale(1);
+  transition-duration: 200ms;
+  transition-delay: 110ms;
+}
+.blyrics-sing__glyph--busy > span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  opacity: var(--glyph-o);
+  
+  background: var(
+      --blyrics-shimmer-gradient,
+      linear-gradient(110deg, hsla(0, 0%, 100%, 0.35) 0%, hsla(0, 0%, 100%, 0.95) 50%, hsla(0, 0%, 100%, 0.35) 100%)
+    )
+    0 0 / 200% 100%;
+  animation: blyrics-shimmer 3s linear infinite;
+  will-change: background-position;
+  -webkit-mask: var(--glyph) center / contain no-repeat;
+  mask: var(--glyph) center / contain no-repeat;
+}
+@keyframes blyrics-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* -- Fader card ----------------------------------------------------------- */
+.blyrics-mix {
+  position: fixed;
+  z-index: 2147483000;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 20px;
+  background-color: hsl(220, 3%, 13%);
+  box-shadow: rgba(0, 0, 0, 0.5) 0 8px 24px 0;
+  
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition-property: opacity, transform, visibility;
+  transition-duration: 160ms;
+  transition-timing-function: var(--dock-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.blyrics-mix.blyrics-mix--open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.blyrics-mix.blyrics-dock__menu {
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
+  gap: 0;
+  padding: 6px;
+  border-radius: 20px;
+}
+
+.blyrics-mix-track {
+  position: relative;
+  width: 30px;
+  height: 146px;
+  padding: 3px;
+  border-radius: 14px;
+  background-color: rgba(0, 0, 0, 0.22);
+  cursor: grab;
+  touch-action: none;
+}
+.blyrics-mix-track:active {
+  cursor: grabbing;
+}
+.blyrics-mix-track:focus-visible {
+  outline: 2px solid var(--blk-accent);
+  outline-offset: 3px;
+}
+
+.blyrics-mix-well {
+  position: absolute;
+  inset: 3px;
+  border-radius: 11px;
+  padding: 2px;
+}
+.blyrics-mix-clip {
+  position: absolute;
+  inset: 2px;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.blyrics-mix-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 9px;
+  background: var(--blk-accent);
+}
+.blyrics-mix-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18px;
+  
+  border-radius: 9px;
+  background-color: hsl(0, 0%, 96%);
+  
+  box-shadow: rgba(0, 0, 0, 0.45) 0 var(--shadow-y, 0px) 6px -1px;
+  transform: translateY(-50%) scale(var(--thumb-scale, 0.85));
+  opacity: var(--thumb-opacity, 0);
+  transition-property: transform, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: var(--ease, cubic-bezier(0.2, 0, 0, 1));
+}
+.blyrics-mix:hover .blyrics-mix-thumb,
+.blyrics-mix:focus-within .blyrics-mix-thumb {
+  --thumb-scale: 1;
+  --thumb-opacity: 1;
+}
+
+.blyrics-mix-readout {
+  position: absolute;
+  left: 50%;
+  height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition-property: opacity;
+  transition-duration: 220ms;
+  transition-timing-function: var(--ease, cubic-bezier(0.2, 0, 0, 1));
+}
+.blyrics-mix--down .blyrics-mix-readout {
+  top: calc(100% + 7px);
+}
+.blyrics-mix--up .blyrics-mix-readout {
+  bottom: calc(100% + 7px);
+}
+.blyrics-mix-readout--visible {
+  opacity: 1;
+}
+.blyrics-mix-word {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: hsla(0, 0%, 100%, 0.55);
+  opacity: 1;
+  filter: blur(0);
+  transform: translate(-50%, 0);
+  transition-property: opacity, transform, filter;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease, cubic-bezier(0.2, 0, 0, 1));
+}
+.blyrics-mix-word--enter {
+  opacity: 0;
+  filter: blur(4px);
+  transform: translate(-50%, 5px);
+}
+.blyrics-mix-word--exit {
+  opacity: 0;
+  filter: blur(4px);
+  transform: translate(-50%, -5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blyrics-sing {
+    transition-property: none;
+  }
+  .blyrics-sing__glyph {
+    transition-property: --glyph-o;
+    transition-delay: 0ms;
+  }
+  .blyrics-mix-thumb {
+    transition-property: opacity;
+    --thumb-scale: 1;
+  }
+  .blyrics-sing__glyph,
+  .blyrics-mix {
+    filter: none;
+    transform: none;
+  }
+  .blyrics-mix,
+  .blyrics-mix-word {
+    transition-property: opacity;
+  }
+  .blyrics-sing__glyph--busy > span {
+    animation: none;
+  }
+}
+
+/* -- Hover card ----------------------------------------------------------- */
+.blyrics-mix-tip {
+  position: fixed;
+  z-index: 10000;
+  
+  box-sizing: border-box;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background-color: hsla(0, 0%, 12%, 0.9);
+  box-shadow:
+    rgba(0, 0, 0, 0.3) 0 8px 22px -8px,
+    inset rgba(255, 255, 255, 0.1) 0 1px 0 0;
+  backdrop-filter: blur(12px);
+  color: hsla(0, 0%, 100%, 0.92);
+  font-size: 12px;
+  line-height: 16px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    width 300ms var(--ease, cubic-bezier(0.2, 0, 0, 1)),
+    opacity 140ms var(--ease, cubic-bezier(0.2, 0, 0, 1));
+}
+.blyrics-mix-tip.is-open {
+  opacity: 1;
+  transition:
+    left 300ms var(--ease, cubic-bezier(0.2, 0, 0, 1)),
+    width 300ms var(--ease, cubic-bezier(0.2, 0, 0, 1)),
+    opacity 140ms var(--ease, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.blyrics-mix-tip__stack {
+  display: grid;
+  height: 16px;
+}
+.blyrics-mix-tip__stack > * {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  transform-origin: 50% 50%;
+}
+
+.blyrics-mix-tip__note {
+  display: flex;
+  align-items: flex-end;
+  white-space: nowrap;
+  height: 0;
+  opacity: 0;
+  color: hsla(0, 0%, 100%, 0.55);
+  font-size: 11px;
+  line-height: 15px;
+  transition:
+    height 220ms var(--ease, cubic-bezier(0.2, 0, 0, 1)),
+    opacity 160ms var(--ease, cubic-bezier(0.2, 0, 0, 1));
+}
+.blyrics-mix-tip__note.is-shown {
+  height: 18px;
+  opacity: 1;
+}
+
+.blyrics-mix-tip__ruler {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  padding: inherit;
+  pointer-events: none;
+}
+
+.blyrics-mix-tip__pct {
+  font-variant-numeric: tabular-nums;
+}
+
+.blyrics-mix-tip__line.is-leaving {
+  animation: blyrics-tip-out 320ms var(--ease, cubic-bezier(0.2, 0, 0, 1)) forwards;
+}
+.blyrics-mix-tip__line.is-entering {
+  animation: blyrics-tip-in 320ms var(--ease, cubic-bezier(0.2, 0, 0, 1)) backwards;
+}
+
+@keyframes blyrics-tip-out {
+  to {
+    transform: translateY(-10%) scale(0.86);
+    filter: blur(5px);
+    opacity: 0;
+  }
+}
+@keyframes blyrics-tip-in {
+  from {
+    transform: translateY(10%) scale(0.86);
+    filter: blur(5px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blyrics-mix-tip,
+  .blyrics-mix-tip__line.is-leaving,
+  .blyrics-mix-tip__line.is-entering {
+    transition-duration: 1ms;
+    animation-duration: 1ms;
+  }
+}
+
+.blyrics-mix::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  right: -14px;
+  top: -14px;
+  bottom: -14px;
+  z-index: -1;
+}
+
+/* -- Crossfade wipe ------------------------------------------------------- */
+.blyrics-sing__wipe {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.blyrics-sing__wipe > i {
+  position: absolute;
+  inset: 0 100% 0 0;
+  background: color-mix(
+    in srgb,
+    var(--blk-accent) 42%,
+    transparent
+  );
+  border-right: 1.5px solid hsla(0, 0%, 100%, 0.9);
+  border-left: 1.5px solid transparent;
+  animation: blyrics-sing-wipe var(--fade-ms, 8000ms) linear forwards;
+}
+@keyframes blyrics-sing-wipe {
+  0% {
+    left: 0;
+    right: 100%;
+    border-right-color: hsla(0, 0%, 100%, 0.9);
+    border-left-color: transparent;
+  }
+  48% {
+    left: 0;
+    right: 0;
+    border-right-color: hsla(0, 0%, 100%, 0.9);
+    border-left-color: transparent;
+  }
+  52% {
+    left: 0;
+    right: 0;
+    border-right-color: transparent;
+    border-left-color: hsla(0, 0%, 100%, 0.9);
+  }
+  100% {
+    left: 100%;
+    right: 0;
+    border-right-color: transparent;
+    border-left-color: hsla(0, 0%, 100%, 0.9);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .blyrics-sing__wipe > i {
+    animation: none;
+    inset: 0;
+    background: color-mix(
+      in srgb,
+      var(--blk-accent) 24%,
+      transparent
+    );
+    border-color: transparent;
+  }
+}

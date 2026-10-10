@@ -1,0 +1,353 @@
+// -- Deck --------------------------------------------------------------------
+
+import { GAIN_RAMP_SECONDS, rampGainFromZero, rampGainTo } from "@/pageworld/gain-ramp";
+import { gainsForMixLevel } from "@/pageworld/gain-law";
+import { FRAME_SECONDS } from "@/pageworld/swap-window";
+
+interface DeckDeps {
+  context: AudioContext;
+  output: AudioNode;
+  onFinished?(): void;
+}
+
+type DeckKind = "stems" | "mix";
+
+type DeckLoad =
+  | { kind: "stems"; vocals: AudioBuffer; instrumental: AudioBuffer; trackId: string | null }
+  | { kind: "mix"; mix: AudioBuffer; trackId: string | null };
+
+interface DeckState {
+  kind: DeckKind;
+  stemsLoaded: boolean;
+  trackId: string | null;
+  finished: boolean;
+  stemFrames: number;
+  stemSampleRate: number;
+  vocalsRms: number;
+  instrumentalRms: number;
+  combinedPeak: number;
+  playing: boolean;
+  vocalsGain: number;
+  instrumentalGain: number;
+  deckGain: number;
+  positionSeconds: number;
+  durationSeconds: number;
+  heldBytes: number;
+}
+
+interface Deck {
+  load(request: DeckLoad): boolean;
+  startAt(offsetSeconds: number, when?: number): void;
+  stop(): void;
+  release(): boolean;
+  stopAt(when: number): void;
+  fadeOutAndStop(seconds?: number): void;
+  fadeIn(seconds?: number): void;
+  setMixLevel(mixLevel: number, seconds?: number): void;
+  hasStems(): boolean;
+  isPlaying(): boolean;
+  hasFinished(): boolean;
+  trackId(): string | null;
+  durationSeconds(): number;
+  positionNow(): number;
+  envelope(): Float32Array;
+  gainParam(): AudioParam;
+  setGain(value: number, seconds?: number): void;
+  heldBuffers(): AudioBuffer[];
+  describe(): DeckState;
+  dispose(): void;
+}
+
+interface LoadedAudio {
+  kind: DeckKind;
+  trackId: string | null;
+  vocals: AudioBuffer | null;
+  instrumental: AudioBuffer;
+  durationSeconds: number;
+  vocalsRms: number;
+  instrumentalRms: number;
+  combinedPeak: number;
+  envelope: Float32Array;
+}
+
+interface Loudness {
+  vocalsRms: number;
+  instrumentalRms: number;
+  combinedPeak: number;
+  envelope: Float32Array;
+}
+
+function envelopeFor(frames: number, sampleRate: number): { frameLength: number; sums: Float32Array } {
+  const frameLength = Math.max(1, Math.round(sampleRate * FRAME_SECONDS));
+  return { frameLength, sums: new Float32Array(Math.max(1, Math.ceil(frames / frameLength))) };
+}
+
+function envelopeFromSums(sums: Float32Array, frameLength: number, channels: number): Float32Array {
+  const divisor = Math.max(1, frameLength * channels);
+  for (let i = 0; i < sums.length; i++) sums[i] = Math.sqrt(sums[i] / divisor);
+  return sums;
+}
+
+function measureMixLoudness(mix: AudioBuffer): Loudness {
+  let sum = 0;
+  let peak = 0;
+  let counted = 0;
+  const { frameLength, sums } = envelopeFor(mix.length, mix.sampleRate);
+
+  for (let channel = 0; channel < mix.numberOfChannels; channel++) {
+    const samples = mix.getChannelData(channel);
+    for (let n = 0; n < samples.length; n++) {
+      const square = samples[n] * samples[n];
+      sum += square;
+      sums[(n / frameLength) | 0] += square;
+      const level = Math.abs(samples[n]);
+      if (level > peak) peak = level;
+    }
+    counted += samples.length;
+  }
+
+  return {
+    vocalsRms: 0,
+    instrumentalRms: Math.sqrt(sum / Math.max(1, counted)),
+    combinedPeak: peak,
+    envelope: envelopeFromSums(sums, frameLength, mix.numberOfChannels),
+  };
+}
+
+function measureLoudness(instrumental: AudioBuffer, vocals: AudioBuffer | null): Loudness {
+  if (vocals === null) return measureMixLoudness(instrumental);
+
+  let vocalsSum = 0;
+  let instrumentalSum = 0;
+  let peak = 0;
+  let counted = 0;
+  const { frameLength, sums } = envelopeFor(instrumental.length, instrumental.sampleRate);
+
+  const channels = Math.min(vocals.numberOfChannels, instrumental.numberOfChannels);
+  for (let channel = 0; channel < channels; channel++) {
+    const v = vocals.getChannelData(channel);
+    const i = instrumental.getChannelData(channel);
+    const frames = Math.min(v.length, i.length);
+    for (let n = 0; n < frames; n++) {
+      vocalsSum += v[n] * v[n];
+      instrumentalSum += i[n] * i[n];
+      const combined = v[n] + i[n];
+      sums[(n / frameLength) | 0] += combined * combined;
+      const level = Math.abs(combined);
+      if (level > peak) peak = level;
+    }
+    counted += frames;
+  }
+
+  const divisor = Math.max(1, counted);
+  return {
+    vocalsRms: Math.sqrt(vocalsSum / divisor),
+    instrumentalRms: Math.sqrt(instrumentalSum / divisor),
+    combinedPeak: peak,
+    envelope: envelopeFromSums(sums, frameLength, channels),
+  };
+}
+
+interface DeckBuffers {
+  vocals: AudioBuffer | null;
+  instrumental: AudioBuffer;
+}
+
+function buffersForLoad(request: DeckLoad): DeckBuffers {
+  if (request.kind === "mix") return { vocals: null, instrumental: request.mix };
+  return { vocals: request.vocals, instrumental: request.instrumental };
+}
+
+function heldBuffersOf(loaded: LoadedAudio | null): AudioBuffer[] {
+  if (loaded === null) return [];
+  return loaded.vocals === null ? [loaded.instrumental] : [loaded.vocals, loaded.instrumental];
+}
+
+function createDeck(deps: DeckDeps): Deck {
+  const { context, output } = deps;
+
+  const deckGainNode = context.createGain();
+  deckGainNode.gain.value = 1;
+  deckGainNode.connect(output);
+
+  const vocalsGainNode = context.createGain();
+  const instrumentalGainNode = context.createGain();
+  vocalsGainNode.connect(deckGainNode);
+  instrumentalGainNode.connect(deckGainNode);
+
+  let vocalsSource: AudioBufferSourceNode | null = null;
+  let instrumentalSource: AudioBufferSourceNode | null = null;
+  let loaded: LoadedAudio | null = null;
+  let currentMixLevel = 1;
+  let startedAtOffsetSeconds = 0;
+  let startedAtContextTime = 0;
+  let finished = false;
+
+  function applyMixLevel(mixLevel: number, seconds?: number): void {
+    currentMixLevel = mixLevel;
+    const gains = gainsForMixLevel(mixLevel);
+    rampGainTo(vocalsGainNode.gain, context, gains.vocalsGain, seconds);
+    rampGainTo(instrumentalGainNode.gain, context, gains.instrumentalGain, seconds);
+  }
+
+  function stop(): void {
+    vocalsSource?.stop();
+    vocalsSource?.disconnect();
+    instrumentalSource?.stop();
+    instrumentalSource?.disconnect();
+    vocalsSource = null;
+    instrumentalSource = null;
+  }
+
+  function release(): boolean {
+    if (instrumentalSource !== null) return false;
+    loaded = null;
+    finished = false;
+    return true;
+  }
+
+  function releaseWhenEnded(vocals: AudioBufferSourceNode | null, instrumental: AudioBufferSourceNode): void {
+    instrumental.onended = () => {
+      if (instrumentalSource !== instrumental) return;
+      vocals?.disconnect();
+      instrumental.disconnect();
+      vocalsSource = null;
+      instrumentalSource = null;
+      finished = true;
+      deps.onFinished?.();
+    };
+  }
+
+  function fadeOutAndStop(seconds = GAIN_RAMP_SECONDS): void {
+    const vocals = vocalsSource;
+    const instrumental = instrumentalSource;
+    if (instrumental === null) {
+      stop();
+      return;
+    }
+
+    rampGainTo(deckGainNode.gain, context, 0, seconds);
+    instrumental.onended = () => {
+      vocals?.disconnect();
+      instrumental.disconnect();
+    };
+    const endsAt = context.currentTime + seconds;
+    vocals?.stop(endsAt);
+    instrumental.stop(endsAt);
+    vocalsSource = null;
+    instrumentalSource = null;
+  }
+
+  function stopAt(when: number): void {
+    const vocals = vocalsSource;
+    const instrumental = instrumentalSource;
+    if (instrumental === null) return;
+
+    releaseWhenEnded(vocals, instrumental);
+    vocals?.stop(when);
+    instrumental.stop(when);
+  }
+
+  function load(request: DeckLoad): boolean {
+    stop();
+    const buffers = buffersForLoad(request);
+
+    finished = false;
+    loaded = {
+      kind: request.kind,
+      trackId: request.trackId,
+      vocals: buffers.vocals,
+      instrumental: buffers.instrumental,
+      durationSeconds: buffers.instrumental.duration,
+      ...measureLoudness(buffers.instrumental, buffers.vocals),
+    };
+    return true;
+  }
+
+  function startAt(offsetSeconds: number, when = 0): void {
+    if (!loaded) return;
+    stop();
+    finished = false;
+
+    if (loaded.vocals !== null) {
+      vocalsSource = context.createBufferSource();
+      vocalsSource.buffer = loaded.vocals;
+      vocalsSource.connect(vocalsGainNode);
+    }
+    instrumentalSource = context.createBufferSource();
+    instrumentalSource.buffer = loaded.instrumental;
+    instrumentalSource.connect(instrumentalGainNode);
+    releaseWhenEnded(vocalsSource, instrumentalSource);
+    vocalsSource?.start(when, offsetSeconds);
+    instrumentalSource.start(when, offsetSeconds);
+
+    startedAtOffsetSeconds = offsetSeconds;
+    startedAtContextTime = when === 0 ? context.currentTime : when;
+    applyMixLevel(currentMixLevel);
+  }
+
+  function positionNow(): number {
+    if (instrumentalSource === null || loaded === null) return Number.NaN;
+    const elapsed = startedAtOffsetSeconds + (context.currentTime - startedAtContextTime);
+    return Math.min(elapsed, loaded.durationSeconds);
+  }
+
+  function describe(): DeckState {
+    return {
+      kind: loaded?.kind ?? "stems",
+      stemsLoaded: loaded !== null,
+      trackId: loaded?.trackId ?? null,
+      finished,
+      stemFrames: loaded?.instrumental.length ?? 0,
+      stemSampleRate: loaded?.instrumental.sampleRate ?? 0,
+      vocalsRms: loaded?.vocalsRms ?? 0,
+      instrumentalRms: loaded?.instrumentalRms ?? 0,
+      combinedPeak: loaded?.combinedPeak ?? 0,
+      playing: instrumentalSource !== null,
+      vocalsGain: vocalsGainNode.gain.value,
+      instrumentalGain: instrumentalGainNode.gain.value,
+      deckGain: deckGainNode.gain.value,
+      positionSeconds: positionNow(),
+      durationSeconds: loaded?.durationSeconds ?? 0,
+      heldBytes:
+        loaded === null
+          ? 0
+          : (loaded.vocals === null ? 0 : loaded.vocals.numberOfChannels * loaded.vocals.length * 4) +
+            loaded.instrumental.numberOfChannels * loaded.instrumental.length * 4,
+    };
+  }
+
+  function dispose(): void {
+    stop();
+    loaded = null;
+    vocalsGainNode.disconnect();
+    instrumentalGainNode.disconnect();
+    deckGainNode.disconnect();
+  }
+
+  return {
+    load,
+    startAt,
+    stop,
+    release,
+    stopAt,
+    fadeOutAndStop,
+    fadeIn: seconds => rampGainFromZero(deckGainNode.gain, context, seconds),
+    setMixLevel: applyMixLevel,
+    hasStems: () => loaded !== null,
+    isPlaying: () => instrumentalSource !== null,
+    hasFinished: () => finished,
+    trackId: () => loaded?.trackId ?? null,
+    durationSeconds: () => loaded?.durationSeconds ?? 0,
+    positionNow,
+    envelope: () => loaded?.envelope ?? new Float32Array(0),
+    gainParam: () => deckGainNode.gain,
+    setGain: (value, seconds) => rampGainTo(deckGainNode.gain, context, value, seconds),
+    heldBuffers: () => heldBuffersOf(loaded),
+    describe,
+    dispose,
+  };
+}
+
+export { createDeck };
+export type { Deck, DeckDeps, DeckKind, DeckLoad, DeckState };
